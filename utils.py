@@ -27,7 +27,7 @@ def load_mnist(dtype = jnp.uint8):
 
 
 def dataloader(data, batch_size, *, key):
-    '''todo - managing labels!'''
+
     dataset_size = data.shape[0]
     indices = jnp.arange(dataset_size)
     while True:
@@ -40,6 +40,7 @@ def dataloader(data, batch_size, *, key):
             yield data[batch_perm]
             start = end
             end = start + batch_size
+
 
 def dataloader_with_labels(data, labels, batch_size, *, key):
     '''todo - managing labels!'''

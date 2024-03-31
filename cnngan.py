@@ -39,7 +39,8 @@ class Generator(eqx.Module):
             eqx.nn.BatchNorm(input_size=width, axis_name="batch"),
             jax.nn.relu,
             ConvT(width, channels, stride=1, padding=0, key=keys[4]),
-            jax.nn.tanh]
+            #jax.nn.tanh
+	]
 
     def __call__(self, x, state):
         for layer in self.layers:
@@ -193,9 +194,10 @@ if __name__ == '__main__':
     image_size = (1, 28, 28)
     channels, height, width  = image_size
     # Optimisation hyperparameters
-    lr = 0.0001
-    batch_size = 128
-    num_steps = 500_000
+    lr_g = 1e-3
+    lr_d = 1e-4
+    batch_size = 64
+    num_steps = 100_000
     # Sampling hyperparameters
     print_every=100
     sample_size=10
@@ -204,7 +206,7 @@ if __name__ == '__main__':
 
     key = jax.random.PRNGKey(17456)
     model_key, train_key, loader_key, sample_key = jax.random.split(key, 4)
-    data = load_mnist(dtype=jnp.float32)
+    data = load_mnist(dtype=jnp.uint8)
     data_mean = jnp.mean(data)
     data_std = jnp.std(data)
     data_max = jnp.max(data)
@@ -223,8 +225,8 @@ if __name__ == '__main__':
 
     ############### OPTIM ################
 
-    g_optimizer = optax.adam(lr)
-    d_optimizer = optax.adam(lr)
+    g_optimizer = optax.adam(lr_g)
+    d_optimizer = optax.adam(lr_d)
 
     g_opt_state = g_optimizer.init(eqx.filter(generator, eqx.is_array))
     d_opt_state = d_optimizer.init(eqx.filter(discriminator, eqx.is_array))

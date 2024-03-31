@@ -55,7 +55,7 @@ class Generator(eqx.Module):
             eqx.nn.Linear(512 , 1024, key=keys[3]),
             eqx.nn.Lambda(partial(jax.nn.leaky_relu,negative_slope=self.l_relu)),
             eqx.nn.Linear(1024 , data_size, key=keys[4]),
-            eqx.nn.Lambda(jax.nn.tanh)
+            # eqx.nn.Lambda(jax.nn.tanh)
             ]
         )
     
@@ -64,15 +64,15 @@ class Generator(eqx.Module):
     
 def loss_d(discriminator, generator, real_batch, latent_size, key):
     batch_size = real_batch.shape[0]
-    fake_labels = jnp.zeros(batch_size, dtype=jnp.float32)
-    real_labels = jnp.ones(batch_size, dtype=jnp.float32)
+    fake_labels = jnp.zeros(batch_size)
+    real_labels = jnp.ones(batch_size)
     
     z = jax.random.normal(key, (batch_size, latent_size))
     fake_batch = jax.vmap(generator)(z)
-    pred_y = jax.vmap(discriminator)(fake_batch)
+    pred_y = jax.vmap(discriminator)(fake_batch).flatten()
     loss1 = optax.sigmoid_binary_cross_entropy(pred_y, fake_labels).mean()
 
-    pred_y = jax.vmap(discriminator)(real_batch)
+    pred_y = jax.vmap(discriminator)(real_batch).flatten()
     loss2 = optax.sigmoid_binary_cross_entropy(pred_y, real_labels).mean()
 
     return (loss1 + loss2) / 2
@@ -80,11 +80,10 @@ def loss_d(discriminator, generator, real_batch, latent_size, key):
 
 def loss_g(generator, discriminator, batch_size, latent_size, key):
     z = jax.random.normal(key, (batch_size, latent_size))
-    real_labels = jnp.ones(batch_size, dtype=jnp.float32)
+    real_labels = jnp.ones(batch_size)
     fake_batch = jax.vmap(generator)(z)
-    pred_y = jax.vmap(discriminator)(fake_batch)
+    pred_y = jax.vmap(discriminator)(fake_batch).flatten()
     loss = optax.sigmoid_binary_cross_entropy(pred_y, real_labels).mean()
-
     return loss
 
 
@@ -125,7 +124,7 @@ if __name__ == '__main__':
     dropout_rate = 0.2
     # Optimisation hyperparameters
     lr_g = 2e-4
-    lr_d = 1e-5
+    lr_d = 2e-5
     batch_size = 128
     num_steps = 10000
     # Sampling hyperparameters

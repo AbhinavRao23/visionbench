@@ -8,7 +8,7 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import optax  
 
-from utils import load_mnist,dataloader
+from utils import load_mnist, dataloader
 
 
 class MixerBlock(eqx.Module):

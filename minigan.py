@@ -21,6 +21,7 @@ class Discriminator(eqx.Module):
         self.l_relu = l_relu
         self.dropout_rate = dropout_rate
         keys = jax.random.split(key, 5)
+
         self.model = eqx.nn.Sequential([
             eqx.nn.Linear(data_size, 1024, key=keys[1]), 
             eqx.nn.Lambda(partial(jax.nn.leaky_relu,negative_slope=self.l_relu)),
@@ -28,8 +29,7 @@ class Discriminator(eqx.Module):
             eqx.nn.Lambda(partial(jax.nn.leaky_relu,negative_slope=self.l_relu)),
             eqx.nn.Linear(512, 256, key=keys[3]), 
             eqx.nn.Lambda(partial(jax.nn.leaky_relu,negative_slope=self.l_relu)),
-            eqx.nn.Linear(256, 1, key=keys[4]),
-            eqx.nn.Lambda(jax.nn.sigmoid)
+            eqx.nn.Linear(256, 'scalar', key=keys[4]),
             ]
         )
 
@@ -64,15 +64,15 @@ class Generator(eqx.Module):
     
 def loss_d(discriminator, generator, real_batch, latent_size, key):
     batch_size = real_batch.shape[0]
-    fake_labels = jnp.zeros(batch_size)
-    real_labels = jnp.ones(batch_size)
+    fake_labels = jnp.zeros(batch_size, dtype=jnp.float32)
+    real_labels = jnp.ones(batch_size, dtype=jnp.float32)
     
     z = jax.random.normal(key, (batch_size, latent_size))
     fake_batch = jax.vmap(generator)(z)
-    pred_y = jax.vmap(discriminator)(fake_batch).flatten()
+    pred_y = jax.vmap(discriminator)(fake_batch)
     loss1 = optax.sigmoid_binary_cross_entropy(pred_y, fake_labels).mean()
 
-    pred_y = jax.vmap(discriminator)(real_batch).flatten()
+    pred_y = jax.vmap(discriminator)(real_batch)
     loss2 = optax.sigmoid_binary_cross_entropy(pred_y, real_labels).mean()
 
     return (loss1 + loss2) / 2
@@ -80,16 +80,16 @@ def loss_d(discriminator, generator, real_batch, latent_size, key):
 
 def loss_g(generator, discriminator, batch_size, latent_size, key):
     z = jax.random.normal(key, (batch_size, latent_size))
-    real_labels = jnp.ones(batch_size)
+    real_labels = jnp.ones(batch_size, dtype=jnp.float32)
     fake_batch = jax.vmap(generator)(z)
-    pred_y = jax.vmap(discriminator)(fake_batch).flatten()
+    pred_y = jax.vmap(discriminator)(fake_batch)
     loss = optax.sigmoid_binary_cross_entropy(pred_y, real_labels).mean()
 
     return loss
 
 
 @eqx.filter_jit
-def step_discriminator(discriminator, generator, d_optimizer,  d_opt_state, 
+def step_discriminator(discriminator, generator, d_optimizer, d_opt_state, 
                        real_data, latent_size, key):
     
     loss, grads = eqx.filter_value_and_grad(loss_d)(
@@ -108,7 +108,7 @@ def step_generator(generator, discriminator, g_optimizer, g_opt_state,
     loss, grads  = eqx.filter_value_and_grad(loss_g)(
         generator, discriminator, batch_size, latent_size, key)
 
-    updates, g_opt_state = g_optimizer.update(grads, g_opt_state)
+    updates, g_opt_state = g_optimizer.update(grads, g_opt_state, generator)
     generator = eqx.apply_updates(generator, updates)
     
     return loss, generator, g_opt_state
@@ -121,21 +121,22 @@ if __name__ == '__main__':
     # Model hyperparameters
     data_size = 784
     latent_size = 100
-    l_relu = 0.2
-    dropout_rate = 0.5
+    l_relu = 0.02
+    dropout_rate = 0.2
     # Optimisation hyperparameters
-    lr = 0.001
+    lr_g = 2e-4
+    lr_d = 1e-5
     batch_size = 128
-    num_steps = 100000
+    num_steps = 10000
     # Sampling hyperparameters
-    print_every=1000
+    print_every=100
     sample_size=10
 
 
     ############### DATA ################
 
     key = jax.random.PRNGKey(1736)
-    data = load_mnist(dtype=jnp.float32)
+    data = load_mnist(dtype=jnp.uint8)
     data_mean = jnp.mean(data)
     data_std = jnp.std(data)
     data_max = jnp.max(data)
@@ -148,18 +149,18 @@ if __name__ == '__main__':
     ############## MODEL #################
 
     key, d_key, g_key = jax.random.split(key, 3)
-    discriminator = Discriminator( data_size, l_relu, dropout_rate, d_key)
+    discriminator = Discriminator(data_size, l_relu, dropout_rate, d_key)
     generator = Generator(data_size, latent_size, l_relu, g_key)
 
+    z1 = jax.random.normal(key, shape=(100,))
+    z2 = jax.random.normal(g_key, shape=(100,))
 
     ############### OPTIM ################
 
-    g_optimizer = optax.adam(lr)
-    d_optimizer = optax.adam(lr)
-
+    g_optimizer = optax.adam(lr_g)
+    d_optimizer = optax.adam(lr_d)
     g_opt_state = g_optimizer.init(eqx.filter(generator, eqx.is_array))
     d_opt_state = d_optimizer.init(eqx.filter(discriminator, eqx.is_array))
-
 
     ############### TRAINING ###############
 
@@ -171,7 +172,7 @@ if __name__ == '__main__':
         train_key, g_key, d_key = jax.random.split(train_key, 3)
         
         (d_loss, discriminator, d_opt_state) = step_discriminator(
-            discriminator, generator, d_optimizer,  d_opt_state, data, 
+            discriminator, generator, d_optimizer, d_opt_state, data, 
             latent_size, d_key)
 
         (g_loss, generator, g_opt_state) = step_generator(
